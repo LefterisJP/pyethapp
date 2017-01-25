@@ -1,6 +1,6 @@
 """ A simple way of interacting to a ethereum node through JSON RPC commands. """
 import logging
-import time
+import os
 import warnings
 import json
 
@@ -9,7 +9,11 @@ from ethereum.abi import ContractTranslator
 from ethereum.keys import privtoaddr
 from ethereum.transactions import Transaction
 from ethereum.utils import denoms, int_to_big_endian, big_endian_to_int, normalize_address
-from ethereum._solidity import solidity_unresolved_symbols, solidity_library_symbol, solidity_resolve_symbols
+from ethereum._solidity import (
+    solidity_unresolved_symbols,
+    solidity_library_symbol,
+    solidity_resolve_symbols
+)
 from tinyrpc.protocols.jsonrpc import JSONRPCErrorResponse, JSONRPCSuccessResponse
 from tinyrpc.protocols.jsonrpc import JSONRPCProtocol
 from tinyrpc.transports.http import HttpPostClientTransport
@@ -208,14 +212,42 @@ class JSONRPCClient(object):
             self.eth_estimateGas,
         )
 
-    def deploy_solidity_contract(self, sender, contract_name, all_contracts,  # pylint: disable=too-many-locals
-                                 libraries, constructor_parameters, timeout=None, gasprice=default_gasprice):
+    def deploy_solidity_contract(
+            self,  # pylint: disable=too-many-locals
+            sender,
+            contract_name,
+            all_contracts,
+            libraries,
+            constructor_parameters,
+            contract_path=None,
+            timeout=None,
+            gasprice=default_gasprice
+    ):
+        """
+        Deploy a solidity contract.
+        Args:
+            sender (address): the sender address
+            contract_name (str): the name of the contract to compile
+            all_contracts (dict): the json dictionary containing the result of compiling a file
+            libraries (list): A list of libraries to use in deployment
+            constructor_parameters (tuple): A tuple of arguments to pass to the constructor
+            contract_path (str): If given then we are dealing with solc >= v0.4.9 and is
+                                 a required argument to extract the contract data from the
+                                 `all_contracts` dict.
+            timeout (int): Amount of time to poll the chain to confirm deployment
+            gasprice: The gasprice to provide for the transaction
+        """
 
-        if contract_name not in all_contracts:
-            raise ValueError('Unkonwn contract {}'.format(contract_name))
+        if contract_path is None:
+            if contract_name not in all_contracts:
+                raise ValueError('Unknown contract {}'.format(contract_name))
+            contract_key = contract_name
+        else:
+            _, filename = os.path.split(contract_path)
+            contract_key = filename + ":" + contract_name
 
         libraries = dict(libraries)
-        contract = all_contracts[contract_name]
+        contract = all_contracts[contract_key]
         contract_interface = contract['abi']
         symbols = solidity_unresolved_symbols(contract['bin_hex'])
 
@@ -231,11 +263,11 @@ class JSONRPCClient(object):
                 raise Exception(msg)
 
             dependencies = deploy_dependencies_symbols(all_contracts)
-            deployment_order = dependencies_order_of_build(contract_name, dependencies)
+            deployment_order = dependencies_order_of_build(contract_key, dependencies)
 
             deployment_order.pop()  # remove `contract_name` from the list
 
-            log.debug('Deploing dependencies: {}'.format(str(deployment_order)))
+            log.debug('Deploying dependencies: {}'.format(str(deployment_order)))
 
             for deploy_contract in deployment_order:
                 dependency_contract = all_contracts[deploy_contract]
