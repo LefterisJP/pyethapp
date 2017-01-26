@@ -231,20 +231,22 @@ class JSONRPCClient(object):
             all_contracts (dict): the json dictionary containing the result of compiling a file
             libraries (list): A list of libraries to use in deployment
             constructor_parameters (tuple): A tuple of arguments to pass to the constructor
-            contract_path (str): If given then we are dealing with solc >= v0.4.9 and is
-                                 a required argument to extract the contract data from the
-                                 `all_contracts` dict.
+            contract_path (str): If we are dealing with solc >= v0.4.9 then the path
+                                 to the contract is a required argument a required argument
+                                 to extract the contract data from the `all_contracts` dict.
             timeout (int): Amount of time to poll the chain to confirm deployment
             gasprice: The gasprice to provide for the transaction
         """
 
-        if contract_path is None:
-            if contract_name not in all_contracts:
-                raise ValueError('Unknown contract {}'.format(contract_name))
+        if contract_name in all_contracts:
             contract_key = contract_name
-        else:
+        elif contract_path is not None:
             _, filename = os.path.split(contract_path)
             contract_key = filename + ":" + contract_name
+            if contract_key not in all_contracts:
+                raise ValueError('Unknown contract {}'.format(contract_name))
+        else:
+            raise ValueError('Unknown contract {} and no contract_path given'.format(contract_name))
 
         libraries = dict(libraries)
         contract = all_contracts[contract_key]
